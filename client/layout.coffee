@@ -81,7 +81,8 @@ export Credits = React.memo ->
       <a className="btn btn-default" href="https://github.com/edemaine/coauthor/#coauthor">Documentation</a>
       <a className="btn btn-default" href="https://github.com/edemaine/coauthor/blob/main/CHANGELOG.md">Changelog</a>
       <a className="btn btn-default" href="https://github.com/edemaine/coauthor/issues/">Suggestions/Issues</a>
-      <a className="btn btn-default" href="https://github.com/edemaine/coauthor/">Source Code</a>
+      <a className="btn btn-default" href="https://github.com/redstonerodent/coauthor/">Source Code</a>
+      <a className="btn btn-default" href="https://github.com/redstonerodent/coauthor/blob/main/DELTA.md">Changes in Fork</a>
     </span>
   </p>
 Credits.displayName = 'Credits'
