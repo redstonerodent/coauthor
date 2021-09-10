@@ -149,6 +149,8 @@ export GroupButtons = React.memo ({group, can, sortBy}) ->
   , []
   [dropdown, setDropdown] = useState false
 
+  defaultPublished &= groupRoleCheck group, 'edit-own'
+
   onSortSetDefault = (e) ->
     e.stopPropagation()
     console.log "Setting default sort for #{group} to #{if sortBy.reverse then '-' else '+'}#{sortBy.key}"
@@ -222,24 +224,26 @@ export GroupButtons = React.memo ({group, can, sortBy}) ->
             </TextTooltip>
           </Dropdown.Item>
         </li>
-        <li>
-          <Dropdown.Item href="#" data-published={not defaultPublished}
-           onClick={onPost} onAuxClick={onPost}>
-            {if defaultPublished
-              <TextTooltip placement="left" title="Start a new root message that starts in the unpublished state, so it will become generally visible only when you select Action / Publish.">
-                <button className="btn btn-warning btn-block postButton">
-                  New Unpublished Root Message
-                </button>
-              </TextTooltip>
-            else
-              <TextTooltip placement="left" title="Start a new root message that starts in the published state, so everyone in this group can see it immediately.">
-                <button className="btn btn-success btn-block postButton">
-                  New Published Root Message
-                </button>
-              </TextTooltip>
-            }
-          </Dropdown.Item>
-        </li>
+        {if groupRoleCheck group, 'edit-own'
+          <li>
+            <Dropdown.Item href="#" data-published={not defaultPublished}
+             onClick={onPost} onAuxClick={onPost}>
+              {if defaultPublished
+                <TextTooltip placement="left" title="Start a new root message that starts in the unpublished state, so it will become generally visible only when you select Action / Publish.">
+                  <button className="btn btn-warning btn-block postButton">
+                    New Unpublished Root Message
+                  </button>
+                </TextTooltip>
+              else
+                <TextTooltip placement="left" title="Start a new root message that starts in the published state, so everyone in this group can see it immediately.">
+                  <button className="btn btn-success btn-block postButton">
+                    New Published Root Message
+                  </button>
+                </TextTooltip>
+              }
+            </Dropdown.Item>
+          </li>
+        }
       </Dropdown.Menu>
     </Dropdown>
     <div className="btn-group">
