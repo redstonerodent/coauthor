@@ -14,3 +14,4 @@ public/katex
 public/pdf.worker.min.js
 server/kadira.js
 server/kadira.coffee
+package-lock.json

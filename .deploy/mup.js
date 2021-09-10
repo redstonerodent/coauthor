@@ -2,24 +2,24 @@ module.exports = {
   servers: {
     one: {
       // Server host name / IP address
-      host: 'coauthor.csail.mit.edu',
+      host: 'mafia.csail.mit.edu',
       // Root-level username on server
       username: 'ubuntu',
       // Local SSH key to use to authenticate to server
-      pem: "/afs/csail/u/e/edemaine/.ssh/private/id_rsa"
+      pem: "/home/ubuntu/.ssh/id_rsa"
     }
   },
 
   // Meteor server
   meteor: {
-    name: 'coauthor',
+    name: 'mafia-coauthor',
     // Location of the Coauthor source code (parent directory of this file)
-    path: '/afs/csail/u/e/edemaine/Projects/coauthor',
+    path: '/home/ubuntu/coauthor',
     servers: {
       one: {}
     },
     docker: {
-      image: 'abernix/meteord:node-12-base',
+      image: 'zodern/meteor:root',
       stopAppDuringPrepareBundle: false
     },
     buildOptions: {
@@ -32,7 +32,7 @@ module.exports = {
       // deployCheckWaitTime below.
       COAUTHOR_SKIP_UPGRADE_DB: '1',
       // Set to your public-facing URL
-      ROOT_URL: 'https://coauthor.csail.mit.edu',
+      ROOT_URL: 'https://mafia.csail.mit.edu',
       // Set to your SMTP server, to enable Coauthor email notifications.
       // Comment out this line to turn off email notifications.
       MAIL_URL: 'smtp://coauthor.csail.mit.edu:25?ignoreTLS=true',
@@ -66,14 +66,14 @@ module.exports = {
 
   // Reverse proxy for SSL
   proxy: {
-    domains: 'coauthor.csail.mit.edu',
+    domains: 'mafia.csail.mit.edu',
     ssl: {
       // The simple way to enable SSL on your server is Let's Encrypt.
       // Just specify your email address as follows:
-      //letsEncryptEmail: 'you@email.com',
+      letsEncryptEmail: 'dylanhen@mit.edu',
       // Alternatively, specify a certificate manually as follows:
-      crt: '../../coauthor_csail_mit_edu.ssl/coauthor_csail_mit_edu.pem',
-      key: '../../coauthor_csail_mit_edu.ssl/coauthor_csail_mit_edu.key',
+      // crt: '../../coauthor_csail_mit_edu.ssl/coauthor_csail_mit_edu.pem',
+      // key: '../../coauthor_csail_mit_edu.ssl/coauthor_csail_mit_edu.key',
       // Redirect all http traffic to the https site:
       forceSSL: true,
     },

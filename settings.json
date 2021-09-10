@@ -5,6 +5,7 @@
   },
   "public": {
     "coauthor": {
+        "emailless": true
     }
   },
   "sharejs": {
