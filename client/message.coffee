@@ -1907,6 +1907,7 @@ export WrappedSubmessage = React.memo ({message, read}) ->
     protect: canProtect message._id
     superdelete: canSuperdelete message._id
     private: canPrivate message._id
+    viewHistory: canViewHistory message._id
     parent: canMaybeParent message._id
     edit: canEdit message._id
     reply: canReply message
@@ -2411,9 +2412,27 @@ export WrappedSubmessage = React.memo ({message, read}) ->
                 </TextTooltip>
               }
               {unless history
-                <TextTooltip title="View past versions of this message, and who edited when">
-                  <button className="btn btn-default historyButton" tabIndex={tabindex0+2} onClick={onHistory}>History</button>
-                </TextTooltip>
+                <OverlayTrigger overlay={(props) ->
+                  <Tooltip {...props}>
+                    {if can.viewHistory
+                      <p>
+                        View past versions of this message, and who edited when.
+                      </p>
+                    else
+                      <p>
+                        You do not have permission to view history in this group/thread.
+                      </p>
+                    }
+                  </Tooltip>
+                }>
+                  <span className="wrapper #{if can.viewHistory then '' else 'disabled'}">
+                    <button className="btn btn-default historyButton"
+                     tabIndex={tabindex0+2} onClick={onHistory}
+                     disabled={not can.viewHistory}>
+                      History
+                    </button>
+                  </span>
+                </OverlayTrigger>
               }
             </>
           }

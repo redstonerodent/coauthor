@@ -563,6 +563,15 @@ if Meteor.isServer
   )
 @canUnpublish = canDelete
 
+@canViewHistory = (message, client = Meteor.isClient, user = Meteor.user()) ->
+  ## are you allowed to view history on this message?
+  message = findMessage message
+  return false unless message?
+  user? and (
+    canSuper(message.group, client, user) or
+    messageRoleCheck(message.group, message, 'history', user)
+  )
+
 @canSuper = (group, client = Meteor.isClient, user = Meteor.user()) ->
   ## If client is true, we use the session variable 'super' to fake whether
   ## superuser mode is viewed as on (from the client perspective).
@@ -1642,7 +1651,9 @@ export messageNeighbors = (root) ->
 ## (despite that not being stored explicitly in diffs).
 ## Each new message object has `_id` equal to the message's `_id`,
 ## and an extra `diffId` key for the diff's `_id` field.
-export messageDiffsExpanded = (message) ->
+export messageDiffsExpanded = (message, user=Meteor.user()) ->
+  ## give nothing if user doesn't have permission
+  return [] unless messageRoleCheck message.group, message, 'history', user
   message = findMessage message
   diffs = MessagesDiff.find
     id: message._id
