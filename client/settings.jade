@@ -52,7 +52,7 @@ template(name="settings")
           tr
             th
               label Messages initially published:
-              .description If turned off, your messages won't be visible to others until you click the Publish button (in the Action menu).
+              .description If turned off, your messages won't be visible to others until you click the Publish button (in the Action menu). If you don't have permission to edit your own posts, this setting has no effect because you can only post unpublished messages.
             td
               if autopublish
                 button.btn.btn-success.autopublishButton(type="button", data-toggle="button", autocomplete="off") Yes

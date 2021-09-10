@@ -1379,6 +1379,8 @@ export ReplyButtons = React.memo ({message, prefix}) ->
   ## (in the former case, overriding autopublish setting).
   defaultPublished and= Boolean message.published
   defaultDeleted = Boolean message.deleted
+  ## if user can't edit their own posts, post unpublished
+  defaultPublished and= messageRoleCheck message.group, message, 'edit-own'
   adjectives = []
   adjectives.push 'unpublished' unless defaultPublished
   adjectives.push 'deleted' if defaultDeleted
@@ -1526,9 +1528,9 @@ export ReplyButtons = React.memo ({message, prefix}) ->
         </Dropdown.Item>
       </li>
       {
-      ## Offer second (un)published option only if parent published;
-      ## if parent unpublisehd, then we only offer unpublished above.
-      if message.published
+      ## Offer second (un)published option only if parent published (and user can edit own posts);
+      ## if parent unpublished, then we only offer unpublished above.
+      if message.published and messageRoleCheck message.group, message, 'edit-own'
         <li>
           <Dropdown.Item href="#" data-published="#{not defaultPublished}" onClick={onReply}>
             {if defaultPublished

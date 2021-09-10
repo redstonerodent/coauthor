@@ -531,7 +531,9 @@ if Meteor.isServer
   return false unless message?
   user? and (
     canSuper(message.group, client, user) or
-    amCoauthor(message, user) or
+    (amCoauthor(message, user) and
+      (messageRoleCheck(message.group, message, 'edit-own', user)) or
+        not message.published) or
     (not message.protected and
      messageRoleCheck(message.group, message, 'edit', user) and
      ((message.published and not message.deleted and not message.private) or
@@ -555,7 +557,9 @@ if Meteor.isServer
   return false unless message?
   user? and (
     canSuper(message.group, client, user) or
-    amCoauthor(message, user)
+    (amCoauthor(message, user) and
+      (messageRoleCheck(message.group, message, 'edit-own', user)) or
+        not message.published)
   )
 @canUnpublish = canDelete
 
@@ -778,14 +782,14 @@ checkProtected = (protect, group, user = Meteor.user()) ->
       "Insufficient permissions to (un)protect message in group '#{group}'"
 
 @canCoauthorsMod = (message, coauthorsMod, client = Meteor.isClient, user = Meteor.user()) ->
-  ## Adding coauthors requires no additional permission.
+  ## Adding coauthors requires permission to edit.
   ## Removing coauthors can be done in the following situations:
   ##   * User is a superuser.
   ##   * User is the coauthor being removed (self-removal).
   ##   * Coauthor being removed isn't an author
   ##     (presumably the user is acting as a scribe).
   if coauthorsMod.$addToSet?
-    true
+    canEdit message client user
   else if coauthorsMod.$pull?
     unless canSuper message.group, client, user
       for coauthor in coauthorsMod.$pull

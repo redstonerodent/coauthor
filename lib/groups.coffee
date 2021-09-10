@@ -7,7 +7,7 @@ import {profilingStartup} from './profiling'
 @wildGroup = '*'
 export anonymousUser = '*'
 export readAllUser = '[READ-ALL]'
-export allRoles = ['read', 'post', 'edit', 'super', 'admin']
+export allRoles = ['read', 'post','edit-own', 'history', 'edit', 'super', 'admin']
 
 @escapeGroup = escapeKey
 @unescapeGroup = unescapeKey
