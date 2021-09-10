@@ -533,7 +533,7 @@ if Meteor.isServer
     canSuper(message.group, client, user) or
     (amCoauthor(message, user) and
       (messageRoleCheck(message.group, message, 'edit-own', user)) or
-        not message.published) or
+        (not message.published and messageRoleCheck(message.group, message, 'post', user))) or
     (not message.protected and
      messageRoleCheck(message.group, message, 'edit', user) and
      ((message.published and not message.deleted and not message.private) or
@@ -559,7 +559,7 @@ if Meteor.isServer
     canSuper(message.group, client, user) or
     (amCoauthor(message, user) and
       (messageRoleCheck(message.group, message, 'edit-own', user)) or
-        not message.published)
+        (not message.published and messageRoleCheck(message.group, message, 'post', user)))
   )
 @canUnpublish = canDelete
 
