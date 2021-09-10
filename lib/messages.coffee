@@ -798,7 +798,7 @@ checkProtected = (protect, group, user = Meteor.user()) ->
   ##   * Coauthor being removed isn't an author
   ##     (presumably the user is acting as a scribe).
   if coauthorsMod.$addToSet?
-    canEdit message client user
+    true
   else if coauthorsMod.$pull?
     unless canSuper message.group, client, user
       for coauthor in coauthorsMod.$pull
@@ -977,6 +977,10 @@ _messageUpdate = (id, message, authors = null, old = null) ->
       if other in (old.editing ? []) and
          (other != user?.username or not canEdit id, false, findUsername user)
         _messageEditStop id, other
+    ## Check if editors are still allowed to edit
+    for editor in (old.editing ? [])
+      unless canEdit id, false, findUsername editor
+        _messageEditStop id, editor
   diffid
 
 _messageAddChild = (child, parent, position = null) ->
