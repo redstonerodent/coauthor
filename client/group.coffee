@@ -149,7 +149,7 @@ export GroupButtons = React.memo ({group, can, sortBy}) ->
   , []
   [dropdown, setDropdown] = useState false
 
-  defaultPublished &= groupRoleCheck group, 'edit-own'
+  defaultPublished and= groupRoleCheck group, 'edit-own'
 
   onSortSetDefault = (e) ->
     e.stopPropagation()
