@@ -19,7 +19,11 @@ module.exports = {
       one: {}
     },
     docker: {
+<<<<<<< HEAD
       image: 'zodern/meteor:root',
+=======
+      image: 'zodern/meteor:latest',
+>>>>>>> origin/main
       stopAppDuringPrepareBundle: false
     },
     buildOptions: {
@@ -70,10 +74,17 @@ module.exports = {
     ssl: {
       // The simple way to enable SSL on your server is Let's Encrypt.
       // Just specify your email address as follows:
+<<<<<<< HEAD
       letsEncryptEmail: 'dylanhen@mit.edu',
       // Alternatively, specify a certificate manually as follows:
       // crt: '../../coauthor_csail_mit_edu.ssl/coauthor_csail_mit_edu.pem',
       // key: '../../coauthor_csail_mit_edu.ssl/coauthor_csail_mit_edu.key',
+=======
+      letsEncryptEmail: 'edemaine@mit.edu',
+      // Alternatively, specify a certificate manually as follows:
+      //crt: '../../coauthor_csail_mit_edu.ssl/coauthor_csail_mit_edu.pem',
+      //key: '../../coauthor_csail_mit_edu.ssl/coauthor_csail_mit_edu.key',
+>>>>>>> origin/main
       // Redirect all http traffic to the https site:
       forceSSL: true,
     },

@@ -16,6 +16,7 @@ globals:
   Blaze: readonly
   BrowserPolicy: readonly
   FileCollection: readonly
+  JSDOM: readonly
   Kadira: readonly
   Meteor: readonly
   Modal: readonly
@@ -28,7 +29,6 @@ globals:
   Template: readonly
   Tracker: readonly
   WebApp: readonly
-  moment: readonly
   # Coauthor databases
   Emoji: readonly
   EmojiMessages: readonly
@@ -55,12 +55,14 @@ globals:
   canMaybeParent: readonly
   canMinimize: readonly
   canParent: readonly
+  canPin: readonly
   canPost: readonly
   canPrivate: readonly
   canProtect: readonly
   canPublish: readonly
   canReply: readonly
   canUndelete: readonly
+  canUnpin: readonly
   canUnpublish: readonly
   canUnminimize: readonly
   canSee: readonly
@@ -70,10 +72,10 @@ globals:
   defaultFormat: readonly
   deleteFile: readonly
   displayUser: readonly
+  displayUserLastName: readonly
   escapeGroup: readonly
   escapeRegExp: readonly
   escapeUser: readonly
-  escapeTag: readonly
   fileAbsoluteUrlPrefix: readonly
   fileType: readonly
   fileUrlPattern: readonly
@@ -94,7 +96,6 @@ globals:
   groupPartialMessagesWithRole: readonly
   groupRoleCheck: readonly
   groupSortedBy: readonly
-  groupTags: readonly
   groupVisible: readonly
   haveExplicitAccess: readonly
   highlight: readonly
@@ -103,7 +104,6 @@ globals:
   internalFileUrlPrefix: readonly
   linkToAuthor: readonly
   linkToSort: readonly
-  linkToTag: readonly
   linkify: readonly
   listToTags: readonly
   markdown: readonly
@@ -117,30 +117,26 @@ globals:
   message2root: readonly
   messageReaders: readonly
   messageRoleCheck: readonly
-  messageSubscribers: readonly
   messagesBy: readonly
   messagesByQuery: readonly
   messagesTaggedQuery: readonly
-  momentInUserTimezone: readonly
   notifyMessageUpdate: readonly
   pathFor: readonly
   pluralize: readonly
   readableFiles: readonly
+  rootRoleCheck: readonly
   routeGroup: readonly
   routeGroupOrWild: readonly
   routeMessage: readonly
   routeSortBy: readonly
   sanitize: readonly
   setTitle: readonly
-  sortTags: readonly
   sortedGroupFullMembers: readonly
   sortedGroupPartialMembers: readonly
-  subscribedToMessage: readonly
   titleOrUntitled: readonly
   titleSort: readonly
   undeletedMessagesQuery: readonly
   unescapeGroup: readonly
-  unescapeTag: readonly
   unescapeUser: readonly
   url2file: readonly
   url2internalFile: readonly
@@ -149,8 +145,6 @@ globals:
   urlToFile: readonly
   userSortKey: readonly
   validGroup: readonly
-  validTag: readonly
-  validTags: readonly
   validUsername: readonly
   wildGroup: readonly
 ignorePatterns:
@@ -182,6 +176,7 @@ rules:
     - warn
     - forbid: ['>', '"', '}']
   react/prop-types: off
+  react/react-in-jsx-scope: off
   meteor/eventmap-params:
     - error
     - eventParamName: e

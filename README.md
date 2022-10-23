@@ -139,8 +139,9 @@ To see what's changed in Coauthor recently, check out the
   subscribed (by clicking on the corresponding column, once for default sort
   order and again for opposite sort order).  Intelligent handling of numbers
   while sorting, e.g. "9." comes before "10.".  Deleted messages always sort
-  to the very bottom; minimized messages always sort near the bottom; and
-  unpublished messages always sort near the top.
+  to the very bottom; minimized messages always sort near the bottom;
+  pinned messages always sort near the top; and
+  unpublished messages always sort near the very top.
 
 * "**Live Feed**" to watch messages as they get changed/posted.  Useful for
   projecting the latest activity onto a big screen while a group is gathered
@@ -177,9 +178,9 @@ To see what's changed in Coauthor recently, check out the
   Hover over an emoji to see a list of people who added the emoji; click to
   toggle your own status.  Emoji are positive (purple) or negative (red).
   Positive emoji on root messages are counted on the group page, enabling
-  a simple voting system for e.g. which problems to work on. 
+  a simple voting system for e.g. which problems to work on.
 
-* **Search** across an entire group, or across all groups,
+* **Search** across the current group, thread, or across all groups,
   for posts by keywords using the search bar at the top.
   * Search for a word as a whole `word` (default behavior), or specify
     asterisks to search for partial word matches: `prefix*`, `*suffix`,
@@ -195,6 +196,7 @@ To see what's changed in Coauthor recently, check out the
     to search for regular expressions with spaces in them; normally,
     spaces act as an AND query.
   * Connect words/phrases with `|` to get an OR query instead.
+  * Use parentheses to mix AND and OR arbitrarily, e.g. `always (this | that)`.
   * `by:username` searches for messages coauthored by a specified username
     (which can include `*`s or use regular expressions via `regex:`);
     `by:me` is shorthand for searching for your own username.
@@ -204,10 +206,11 @@ To see what's changed in Coauthor recently, check out the
     `emoji:@username` searches for messages with emoji response by
     a specific user (`emoji:@me` finds your own emoji responses);
     or you can combine the two with e.g. `emoji:thumbs*@username`.
+  * `root:id` matches messages in thread with specified root message ID.
   * `is:root` matches root messages (tops of threads).
   * `is:file` matches file messages (made via Attach).
-  * `is:deleted`, `is:published`, `is:private`, `is:minimized`, `is:protected`
-    match various states of messages.
+  * `is:deleted`, `is:published`, `is:private`, `is:minimized`, `is:pinned`,
+    `is:protected` match various states of messages.
   * `is:empty` matches empty messages (no title, body, or file).
   * `not:...` or `isnt:...` are negated forms of the above `is:...` operators,
     equivalent to `-is:...`.
@@ -327,11 +330,12 @@ To see what's changed in Coauthor recently, check out the
   with [SwiftKey keyboard](https://play.google.com/store/apps/details?id=com.touchtype.swiftkey)
   seems to work best for editing messages in Coauthor.
   (Firefox and Gboard have cursor positioning issues.)
-* LaTeX mode supports LaTeX accents (like `\'e`), but other modes do not.  To
-  easily type accented characters (e.g., on Windows where this is not easy), try
-  [this Chrome extension](https://chrome.google.com/webstore/detail/fastaccent/gkadokkbkifbfpiljldcnnpkebpannhb/related?hl=en-GB)
+* LaTeX mode supports LaTeX accents (like `\'e`), but other modes do not.
+  To easily type Unicode accented characters,
+  use [WinCompose](https://github.com/samhocevar/wincompose) on Windows,
+  [set up a compose key on Linux](https://help.ubuntu.com/community/ComposeKey),
   or
-  [this Firefox extension](https://addons.mozilla.org/en-us/firefox/addon/easyaccent/).
+  [press and hold keys on MacOS](https://support.apple.com/guide/mac-help/enter-characters-with-accent-marks-on-mac-mh27474/mac).
 * Conversely, if you're on modern MacOS, holding down letter keys will bring
   up an accent tool instead of repeating the key.  If you'd rather repeat the
   key (e.g. for Vim mode),

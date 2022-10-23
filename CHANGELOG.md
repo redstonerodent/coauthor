@@ -7,6 +7,206 @@ To see every change with descriptions aimed at developers, see
 As a continuously updated web app, Coauthor uses dates
 instead of version numbers.
 
+## 2022-08-20
+
+* Table of contents displays all message coauthors instead of creator.
+  For more than two coauthors, it just shows last names.
+  [[#607](https://github.com/edemaine/coauthor/issues/607)]
+* Support folding of LaTeX `\section`, `\begin{itemize}`, etc.
+  in Markdown format (not just LaTeX), as it supports this syntax too.
+* Bug fixes in LaTeX folding
+* Fix folding when changing between formats in message editor via
+  [CodeMirror 5.65.8](https://codemirror.net/5/doc/releases.html)
+
+## 2022-08-08
+
+* Improve wording in email notifications for thread creation
+  ("created thread" instead of "created root message in thread").
+
+## 2022-07-27
+
+* URLs with "false Markdown" in them fixed thanks to updated markdown-it
+  [[#426](https://github.com/edemaine/coauthor/issues/426)]
+* Small message editor bug fixes via
+  [CodeMirror 5.65.7](https://codemirror.net/5/doc/releases.html)
+
+## 2022-07-04
+
+* Better copy/pasting behavior with messages containing mathematics,
+  thanks to KaTeX 0.16.0.
+* [Link](README.md#user-tips) to better ways to input accented characters
+
+## 2022-04-30
+
+* Search now supports parentheses for mixing AND and OR queries arbitrarily.
+  For example, `always (this | that)` searches for messages containing
+  both word `always` and either `this` or `that`.
+
+## 2022-04-29
+
+* When filling in the search box in a thread view,
+  the search is automatically restricted to that thread.
+  [[#282](https://github.com/edemaine/coauthor/issues/282)]
+* New search operator `root:id` restricts to messages within the thread
+  rooted at message with specified `id`.
+  [[#29](https://github.com/edemaine/coauthor/issues/29)]
+
+## 2022-04-23
+
+* Switch to [DOMPurify](https://github.com/cure53/DOMPurify) HTML sanitizer,
+  which should make Coauthor faster overall and permit some more (safe)
+  HTML/SVG features than before.  One new restriction is that SVG `<use>`
+  can only use local hrefs, but this is necessary for security.
+  [[#508](https://github.com/edemaine/coauthor/issues/508)]
+* Further reduction in JavaScript bundle size, for faster loading of Coauthor.
+  [[#218](https://github.com/edemaine/coauthor/issues/218)]
+
+## 2022-04-21
+
+* Fix "Replace File" button and improve behavior of clicking on message header
+  to highlight corresponding item in Table of Contents.
+  [[#598](https://github.com/edemaine/coauthor/issues/598)]
+
+## 2022-04-11
+
+* Hovering over a message highlights the corresponding item
+  of the table of contents, or if that item is out of visual range,
+  the relevant border.
+  [[#598](https://github.com/edemaine/coauthor/issues/598)]
+* Hovering over a table-of-contents item highlights the corresponding message.
+  [[#552](https://github.com/edemaine/coauthor/issues/552)]
+
+## 2022-03-22
+
+* Messages can now be pinned to highlight them as "important"
+  (like the opposite of "minimized").
+  Pinned messages get a pin icon and yellow color.
+  Pinned root messages get their threads sorted to the top in group view.
+  [[#599](https://github.com/edemaine/coauthor/issues/599)]
+* The icons for whether a message is being edited or is a file
+  now show up in the group view.
+
+## 2022-03-20
+
+* Messages can now use internal hash links.
+  Markdown headings get automatic `id`s (like GitHub); for example,
+  `## Here` becomes `<h2 id="here">Here</h2>`.
+  Alternatively, you can add an `id` attribute to any HTML tag.
+  Then you can link to this `id` via `<a href="#here">` or `[link](#here)`
+  in Markdown.
+  The `id` gets prefixed by the message ID and an underscore,
+  to avoid `id` conflicts between messages.
+  You can link to a different message's internal link via `#OTHERID_here`.
+  [[#586](https://github.com/edemaine/coauthor/issues/586)]
+
+## 2022-03-17
+
+* Table of contents highlights all messages that are visible in the main view,
+  so it's much easier to tell where you are.
+  The color is more intense for messages fully in view.
+  [[#597](https://github.com/edemaine/coauthor/issues/597)]
+* Clicking on a message header scrolls the table of contents to align the
+  corresponding item, to the extent possible, and pulses that item.
+  [[#598](https://github.com/edemaine/coauthor/issues/598)]
+* Scrolling to messages or table-of-contents items now respects the browser's
+  `prefers-reduced-motion` setting, avoiding smooth scrolling in that case
+  for improved accessibility.
+
+## 2022-03-15
+
+* Group view's header restyled, with headings sticking to
+  the top of the page as you scroll.
+* Group view lists all features that messages are sorted by, so you can more
+  easily control this order.  You can drag features to re-order priority,
+  click on features to flip increasing vs. decreasing, remove features,
+  add features (as usual), and reset to default view.
+* Clicking on a header like Updated will now sort by that as primary.
+  When used with tag sorting, this will show more clusters than is optimum,
+  but is useful for seeing what threads were updated most recently.
+  Re-order the sorts to put tags in front if you want the fewest clusters.
+
+## 2022-03-13
+
+* Notifications now show which tags were added/removed/changed.
+  [[#520](https://github.com/edemaine/coauthor/issues/520)]
+* Many bug fixes and improvements around message tag values.
+  [[#520](https://github.com/edemaine/coauthor/issues/520)]
+
+## 2022-03-12
+
+* Tags on messages can now have values.  For example, each thread root can have
+  a `category`, `week`, or `type` tag with a value.  The group view can then be
+  clustered by one or more of these values, using the new "By tag" dropdown.
+  [[#520](https://github.com/edemaine/coauthor/issues/520)]
+  [[#522](https://github.com/edemaine/coauthor/issues/522)]
+* The group view can now be sorted by multiple features at once, like a
+  spreadsheet. Click the least significant feature to sort by first,
+  then click each subsequent feature.
+  The URL now has a sequence of `+`s and `-`s to indicate the various sorts.
+  [[#349](https://github.com/edemaine/coauthor/issues/349)]
+
+## 2022-03-11
+
+* Allow superusers to add arbitrary users (not necessarily group members)
+  as coauthors or private-message visibility.
+  This is useful when prewriting group content before releasing it to users.
+  [[#503](https://github.com/edemaine/coauthor/issues/503)]
+
+## 2022-03-10
+
+* Restore human-readable date formatting
+* Fix file uploads for partial members
+
+## 2022-03-04
+
+* Rewrote the
+  [file uploading system](https://github.com/edemaine/meteor-file-collection)
+  (which was necessary for modern Meteor, MongoDB, etc.).
+  If you're running your own server, you may need to execute some of the
+  following MongoDB commands to let Coauthor rebuild indexes:
+
+  ```js
+  db.users.dropIndexes()
+  db.fs.files.dropIndexes()
+  db.fs.chunks.dropIndexes()
+  db.fs.locks.drop()  // no longer needed
+  ```
+
+  This also adds support for MongoDB Atlas.
+  [[#472](https://github.com/edemaine/coauthor/issues/472)]
+* More improvements to automatic image reloading when file gets replaced.
+  [[#163](https://github.com/edemaine/coauthor/issues/163)]
+* Fix import functionality
+
+## 2022-02-20
+
+* Users view should be faster, especially reacting to button presses,
+  thanks to SolidJS.
+  [[#595](https://github.com/edemaine/coauthor/issues/595)]
+
+## 2021-11-13
+
+* Fix <kbd>s</kbd> key not working in message editor on iOS
+
+## 2021-11-12
+
+* Fix page title when switching between groups
+  [[#587](https://github.com/edemaine/coauthor/issues/587)]
+
+## 2021-10-21
+
+* Fix bug when switching between the Users view of multiple groups
+  (partial access to messages didn't update)
+
+## 2021-10-14
+
+* Clarify that `author` view lists posts by and @mentioning the user
+
+## 2021-09-29
+
+* Fix bug in finding editor folds when editing a message in LaTeX mode that
+  uses `\begin{foo}` where `foo` has weird characters in it.
+
 ## 2021-09-14
 
 * Fix behavior of links to messages with correct group name
@@ -275,7 +475,7 @@ instead of version numbers.
 ## 2021-03-01
 
 * Superusers can now toggle superuser mode (the equivalent of the
-  Become/Leave Superuser button) via the keyboard shortcut `s`.
+  Become/Leave Superuser button) via the keyboard shortcut <kbd>s</kbd>.
 
 ## 2021-02-25
 

@@ -68,6 +68,13 @@ Template.layout.helpers
     else
       pathFor 'group',
         group: @name
+  searchPlaceholder: ->
+    if routeGroupOrWild() == wildGroup
+      'Search globally'
+    else if routeMessage()
+      'Search in thread'
+    else
+      'Search in group'
   creditsWide: ->
     Router.current().route?.getName() != 'message'
 
@@ -115,6 +122,9 @@ Template.layout.events
         Router.go 'group',
           group: routeGroup()
     else
+      if (message = routeMessage())
+        search = "(#{search})" if /\|/.test search
+        search = "#{search} root:#{message2root message}"
       Router.go resolveSlash Router.path 'search', protectSlash
         group: routeGroupOrWild()
         search: search

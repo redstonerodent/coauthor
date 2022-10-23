@@ -1,10 +1,12 @@
 import {check, Match} from 'meteor/check'
 import {Mongo} from 'meteor/mongo'
 import {ShareJS} from 'meteor/edemaine:sharejs'
+import dayjs from 'dayjs'
 
 import {dateMax} from './dates'
 import {groupDefaultSort} from './groups'
 import {autopublish, defaultFormat} from './settings'
+import {escapeTag, validTags} from './tags'
 
 idleUpdate = 1000      ## one second of idle time before edits update message
 export idleStop = 60*60*1000  ## one hour of idle time before auto stop editing
@@ -37,29 +39,29 @@ export angle180 = (a) ->
 @MessagesParent = new Mongo.Collection 'messages.parents'
 
 if Meteor.isServer
-  #Messages._ensureIndex group: 'hashed'
+  #Messages.createIndex group: 'hashed'
   ## This index makes it easy to find all messages in a specified group,
   ## and to find all root (root = null) messages in a specified group.
-  Messages._ensureIndex [
+  Messages.createIndex [
     ['group', 1]
     ['root', 1]
   ]
   ## This index makes it easy to find all submessages within a given root.
-  Messages._ensureIndex [
+  Messages.createIndex [
     ['root', 1]
   ]
   ## This index is for the 'live' and 'since' query:
   ## most recent messages in a group.
-  Messages._ensureIndex [
+  Messages.createIndex [
     ['group', 1]
     ['updated', -1]
   ]
   ## This index makes findMessageParent fast.
-  Messages._ensureIndex [
+  Messages.createIndex [
     ['children', 1]
   ]
   ## Diffs are accessed by message ID, and then sorted by updated date.
-  MessagesDiff._ensureIndex [
+  MessagesDiff.createIndex [
     ['id', 1]
     ['updated', 1]
   ]
@@ -70,6 +72,12 @@ export rootMessages = (group) ->
   if group?
     query.group = group
   Messages.find query
+
+export descendantMessagesQuery = (root) ->
+  $or: [
+    _id: root
+  , root: root
+  ]
 
 ## Works from nonroot messages via recursion.  Doesn't include message itself.
 export descendantMessageIds = (message) ->
@@ -265,12 +273,7 @@ if Meteor.isServer
       return @ready() unless query?
       root = message.root ? msgId
       Messages.find
-        $and: [query,
-          $or: [
-            _id: root
-          , root: root
-          ]
-        ]
+        $and: [query, descendantMessagesQuery root]
 
 if Meteor.isServer
   ## Returns a query for the messages matching the given query (possibly
@@ -330,8 +333,8 @@ if Meteor.isServer
     query.$or.push body: atRe author
   query
 
-@messagesBy = (group, author) ->
-  Messages.find messagesByQuery(group, author),
+@messagesBy = (group, author, atMentions = true) ->
+  Messages.find messagesByQuery(group, author, atMentions),
     sort: [['updated', 'desc']]
     #limit: parseInt(@limit)
 
@@ -423,16 +426,16 @@ export parseSince = (since) ->
     if match?
       amount = parseFloat match[1]
       return null if isNaN amount
-      moment().subtract(amount, match[2]).toDate()
+      dayjs().subtract(amount, match[2]).toDate()
     else
       match = /^\s*(\d+)\s*:\s*(\d+)\s*$/.exec since
       if match?
-        d = moment().hour(match[1]).minute(match[2])
-        if moment().diff(d) < 0
+        d = dayjs().hour(match[1]).minute(match[2])
+        if dayjs().isBefore d
           d = d.subtract(1, 'day')
         d.toDate()
       else
-        d = moment(since)
+        d = dayjs(since)
         return null unless d.isValid()
         d.toDate()
   catch
@@ -543,6 +546,8 @@ if Meteor.isServer
 @canPublish = canEdit
 @canMinimize = canEdit
 @canUnminimize = canEdit
+@canPin = canEdit
+@canUnpin = canEdit
 ## Older behavior: only superusers can unpublish once published
 #@canUnpublish = (message) ->
 #  canSuper message2group message
@@ -816,6 +821,7 @@ export messageContentFields = [
   'deleted'
   'private'
   'minimized'
+  'pinned'
   'protected'
   'rotate'
   'coauthors'
@@ -899,6 +905,7 @@ _messageUpdate = (id, message, authors = null, old = null) ->
     deleted: Match.Optional Boolean
     private: Match.Optional Boolean
     minimized: Match.Optional Boolean
+    pinned: Match.Optional Boolean
     protected: Match.Optional Boolean
     rotate: Match.Optional Match.Where (r) ->
       typeof r == "number" and -180 < r <= 180
@@ -1263,6 +1270,7 @@ Meteor.methods
       deleted: Match.Optional Boolean
       private: Match.Optional Boolean
       minimized: Match.Optional Boolean
+      pinned: Match.Optional Boolean
       protected: Match.Optional Boolean
       rotate: Match.Optional Match.Where (r) ->
         typeof r == "number" and -180 < r <= 180
@@ -1420,6 +1428,7 @@ Meteor.methods
       deleted: Match.Optional Boolean
       #private: Match.Optional Boolean
       #minimized: Match.Optional Boolean
+      #pinned: Match.Optional Boolean
       #protected: Match.Optional Boolean
       creator: Match.Optional String
       created: Match.Optional Date
@@ -1439,6 +1448,7 @@ Meteor.methods
       deleted: Match.Optional Boolean
       #private: Match.Optional Boolean
       #minimized: Match.Optional Boolean
+      #pinned: Match.Optional Boolean
       #protected: Match.Optional Boolean
       updated: Match.Optional Date
       updators: Match.Optional [String]
@@ -1468,7 +1478,7 @@ Meteor.methods
     diff?.finished = diff.updators  ## last diff gets "finished" flag
     ## If caller doesn't bother setting coauthors, extrapolate from authors:
     message.coauthors ?= _.keys message.authors
-    diff[0].coauthors ?= message.coauthors
+    diffs[0].coauthors ?= message.coauthors
     #if parent?
     #  pmsg = Messages.findOne parent
     #  message.root = pmsg.root ? parent

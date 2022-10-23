@@ -1,20 +1,31 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react'
+import classNames from 'classnames'
 import Dropdown from 'react-bootstrap/Dropdown'
 import OverlayTrigger from 'react-bootstrap/OverlayTrigger'
 import Tooltip from 'react-bootstrap/Tooltip'
 import {useTracker} from 'meteor/react-meteor-data'
 import Blaze from 'meteor/gadicc:blaze-react-component'
+import {HTML5Backend} from 'react-dnd-html5-backend'
+import {DndProvider, useDrag, useDrop} from 'react-dnd'
+import {FontAwesomeIcon} from '@fortawesome/react-fontawesome'
+import {faArrowDownShortWide} from '@fortawesome/free-solid-svg-icons/faArrowDownShortWide'
+import {faArrowDownWideShort} from '@fortawesome/free-solid-svg-icons/faArrowDownWideShort'
+import {faPlus} from '@fortawesome/free-solid-svg-icons/faPlus'
+import {faCircleXmark} from '@fortawesome/free-solid-svg-icons/faCircleXmark'
 
 import {ErrorBoundary} from './ErrorBoundary'
 import {FormatDate} from './lib/date'
-import {MessageLabels, MessageTags, messageClass, uploaderProps} from './message.coffee'
+import {MessageIcons, MessageLabels, messageClass, uploaderProps} from './message.coffee'
+import {TagEdit} from './TagEdit'
 import {TagList} from './TagList'
 import {TextTooltip} from './lib/tooltip'
 import {UserLink} from './UserLink'
 import {emojiReplies} from '/lib/emoji'
 import {formatTitleOrFilename} from '/lib/formats'
-import {groupDefaultSort, sortKeys} from '/lib/groups'
+import {groupDefaultSort, parseSort, unparseSort} from '/lib/groups'
+import {subscribedToMessage} from '/lib/notifications'
 import {autopublish} from '/lib/settings'
+import {groupTags, sortTags} from '/lib/tags'
 
 @routeGroup = ->
   Router.current()?.params?.group
@@ -41,20 +52,44 @@ Template.registerHelper 'groupDataOrWild', ->
   routeGroup() == wildGroup or groupData()
 
 @routeSortBy = ->
-  if Router.current().params.sortBy in sortKeys
-    key: Router.current().params.sortBy
-    reverse: Router.current().route.getName()[-7..] == 'reverse'
-  else
-    groupDefaultSort routeGroup()
+  sortBy = Router.current().params.sortBy
+  ## First character of sortBy is at the end of route's name;
+  ## see `sortChar` in /lib/routes.coffee
+  if sortBy
+    name = Router.current().route.getName()
+    sortBy = name[name.length-1] + sortBy
+  try
+    sortBy = parseSort sortBy
+  catch
+    console.warn "Invalid sortBy parameter: #{sortBy}"
+  unless sortBy?.length
+    sortBy = groupDefaultSort routeGroup()
+  sortBy
 
-@linkToSort = (sort) ->
-  if sort.reverse
-    route = 'group.sorted.reverse'
-  else
-    route = 'group.sorted.forward'
-  pathFor route,
+@linkToSort = (sortBy) ->
+  unparsed = unparseSort sortBy
+  return pathFor 'group', group: routeGroup() unless unparsed
+  pathFor 'group' + unparsed[0],
     group: routeGroup()
-    sortBy: sort.key
+    sortBy: unparsed[1..]
+  .replace /%2B/g, '+'  # converts to space later
+
+changeSortLink = (sortBy, key) ->
+  reverse = key of columnReverse
+  ## Remove this sort if it exists, to move it to the beginning.
+  newSortBy =
+    for sort, i in sortBy
+      if sort.key == key
+        ## If this was already the first sort, reverse it.
+        reverse = not sort.reverse if i == 0
+        continue
+      else
+        sort
+  ## New sort at the beginning.
+  newSortBy.splice 0, 0, {key, reverse}
+  ## Put tags in front for clustering
+  #newSortBy = _.sortBy newSortBy, (sort) -> not sort.key.startsWith 'tag.'
+  linkToSort newSortBy
 
 Template.registerHelper 'groups', ->
   Groups.find {},
@@ -78,9 +113,11 @@ export MaybeGroup = React.memo ({group}) ->
   , [group]
 
   if groupData?
-    <ErrorBoundary>
-      <Group group={group} groupData={groupData}/>
-    </ErrorBoundary>
+    <DndProvider backend={HTML5Backend}>
+      <ErrorBoundary>
+        <Group group={group} groupData={groupData}/>
+      </ErrorBoundary>
+    </DndProvider>
   else
     <Blaze template="badGroup" group={group}/>
 MaybeGroup.displayName = 'MaybeGroup'
@@ -89,9 +126,24 @@ export Group = React.memo ({group, groupData}) ->
   sortBy = useTracker ->
     routeSortBy()
   , []
+  clusterBy = useMemo ->
+    clusterBy = []
+    #primarySort = null
+    for sort in sortBy
+      if sort.key.startsWith 'tag.'
+        clusterBy.push sort.key[4..]
+      #else
+      #  primarySort ?= sort
+    clusterBy = null unless clusterBy.length
+    clusterBy
+    #{clusterBy, primarySort}
+  , [sortBy]
   topMessages = useTracker ->
     groupSortedBy group, sortBy
   , [group, sortBy]
+  tags = useTracker ->
+    groupTags group
+  , [group]
   can = useTracker ->
     post: canPost group
     import: canImport group
@@ -99,19 +151,20 @@ export Group = React.memo ({group, groupData}) ->
   , [group]
 
   <div className="panel panel-primary">
-    <div className="panel-heading clearfix">
-      <span className="push-down btn-group btn-group-xs">
-        <div className="fake-btn">&#8203;</div>
-      </span>
-      <span className="title panel-title">
-        {group}
-      </span>
+    <div className="panel-heading group-heading">
+      <div className="push-down">
+        <span className="title panel-title">
+          {group}
+        </span>
+      </div>
       <ErrorBoundary>
-        <GroupButtons group={group} can={can} sortBy={sortBy}/>
+        <GroupButtons group={group} can={can} sortBy={sortBy}
+         clusterBy={clusterBy} tags={tags}/>
       </ErrorBoundary>
     </div>
     <ErrorBoundary>
-      <MessageList topMessages={topMessages} sortBy={sortBy}/>
+      <MessageList group={group} topMessages={topMessages} tags={tags}
+       sortBy={sortBy} clusterBy={clusterBy}/>
     </ErrorBoundary>
     <div className="panel-footer clearfix">
       <ErrorBoundary>
@@ -119,7 +172,7 @@ export Group = React.memo ({group, groupData}) ->
       </ErrorBoundary>
       <i>{pluralize topMessages.length, 'message thread'}</i>
       <ErrorBoundary>
-        <GroupTags group={group}/>
+        <GroupTags tags={tags} group={group}/>
       </ErrorBoundary>
       <p className="clearfix"/>
       <ErrorBoundary>
@@ -129,10 +182,10 @@ export Group = React.memo ({group, groupData}) ->
   </div>
 Group.displayName = 'Group'
 
-export GroupButtons = React.memo ({group, can, sortBy}) ->
-  superuser = useTracker ->
-    Session.get 'super'
-  , []
+export GroupButtons = React.memo ({group, can, sortBy, clusterBy, tags}) ->
+  #superuser = useTracker ->
+  #  Session.get 'super'
+  #, []
   user = useTracker ->
     Meteor.user()
   , []
@@ -149,12 +202,15 @@ export GroupButtons = React.memo ({group, can, sortBy}) ->
   , []
   [dropdown, setDropdown] = useState false
 
+<<<<<<< HEAD
   defaultPublished and= groupRoleCheck group, 'edit-own'
 
   onSortSetDefault = (e) ->
     e.stopPropagation()
     console.log "Setting default sort for #{group} to #{if sortBy.reverse then '-' else '+'}#{sortBy.key}"
     Meteor.call 'groupDefaultSort', group, sortBy
+=======
+>>>>>>> origin/main
   onRename = (e) ->
     Modal.show 'groupRename'
   onPost = (e) ->
@@ -190,20 +246,15 @@ export GroupButtons = React.memo ({group, can, sortBy}) ->
       else
         console.error "messageNew did not return problem -- not authorized?"
 
-  <div className="pull-right group-right-buttons">
-    {if superuser
+  <> {###<div className="group-right-buttons">###}
+    {if can.globalSuper ###superuser###
       <div className="btn-group">
-        <button className="btn btn-warning sortSetDefault" onClick={onSortSetDefault}>
-          Set Group Default Sort
+        <button className="btn btn-danger groupRenameButton" onClick={onRename}>
+          Rename Group
         </button>
-        {if can.globalSuper
-          <button className="btn btn-danger groupRenameButton" onClick={onRename}>
-            Rename Group
-          </button>
-        }
       </div>
     }
-    
+
     <Dropdown className="btn-group" show={dropdown}
      onToggle={(open) -> setDropdown open}>
       <TextTooltip title={postTitle}>
@@ -272,8 +323,105 @@ export GroupButtons = React.memo ({group, can, sortBy}) ->
         </a>
       </TextTooltip>
     </div>
-  </div>
+  </>
 GroupButtons.displayName = 'GroupButtons'
+
+export GroupSorts = React.memo ({sortBy, clusterBy, tags}) ->
+  superuser = useTracker ->
+    Session.get 'super'
+  , []
+  onSortSetDefault = (e) ->
+    e.stopPropagation()
+    unparsed = unparseSort sortBy
+    group = routeGroup()
+    console.log "Setting default sort for #{group} to #{unparsed}"
+    Meteor.call 'groupDefaultSort', group, unparsed
+  dropSpec = (key) ->
+    accept: 'group-sort'
+    drop: (item, monitor) ->
+      newSortBy = routeSortBy()  # sortBy may not be up-to-date here
+      [moved] =
+        newSortBy.splice (newSortBy.findIndex (s) -> s.key == item.key), 1
+      if key?
+        newSortBy.splice (newSortBy.findIndex (s) -> s.key == key), 0, moved
+      else
+        newSortBy.push moved
+      Router.go linkToSort newSortBy
+    collect: (monitor) ->
+      dropping: Boolean monitor.isOver() and monitor.canDrop()
+  [dropData, drop] = useDrop -> dropSpec()
+
+  tweakSortBy = [...sortBy]
+  <span className="sorts">
+    <TextTooltip title="Messages are sorted by these features, from most significant to least significant. Drag features to change priority, click features to reverse them, remove features via the buttons, or add features by clicking column names or the add-tag button. Tags cluster best when they have the highest priority.">
+      <span className="prefix text-help">Sorted by:</span>
+    </TextTooltip>
+    {for sort, i in sortBy
+      tweakSortBy[i] = {...sort, reverse: not sort.reverse}
+      reversed = linkToSort tweakSortBy
+      tweakSortBy[i] = sort
+      <GroupSort key={sort.key} sort={sort} reversed={reversed}
+       removed={linkToSort [...sortBy[...i], ...sortBy[i+1...]]}
+       dropSpec={dropSpec}/>
+    }
+    <span className={classNames 'sort', dropping: dropData.dropping} ref={drop}>
+      {if tags.length
+        <TagEdit tags={tags} rootClassName="tagSort"
+        className="label label-default"
+        active={if clusterBy then (tag) -> tag.key in clusterBy}
+        href={(tag) -> changeSortLink sortBy, "tag.#{tag.key}"}>
+          <FontAwesomeIcon icon={faPlus}/>
+          {' Tag '}
+          <span className="caret"/>
+        </TagEdit>
+      }
+    </span>
+    <span className="pull-right btn-group">
+      {if superuser
+        <TextTooltip title="Change group's default sort order for all users">
+          <button className="btn btn-danger btn-xs sortSetDefault" onClick={onSortSetDefault}>
+            Set Group Default
+          </button>
+        </TextTooltip>
+      }
+      <TextTooltip title="Reset to group's default sort order">
+        <a href={pathFor 'group', group: routeGroup()}
+        className="btn btn-warning btn-xs">
+          Reset
+        </a>
+      </TextTooltip>
+    </span>
+  </span>
+GroupSorts.displayName = 'GroupSorts'
+
+export GroupSort = React.memo ({sort, reversed, removed, dropSpec}) ->
+  [dragData, drag] = useDrag ->
+    type: 'group-sort'
+    item: key: sort.key
+    collect: (monitor) -> dragging: Boolean monitor.isDragging()
+  [dropData, drop] = useDrop -> dropSpec sort.key
+
+  <span className={classNames 'sort', dragging: dragData.dragging,
+                     dropping: dropData.dropping}>
+    <a ref={(r) -> drag r; drop r} href={reversed}>
+      {if sort.reverse
+        <FontAwesomeIcon icon={faArrowDownWideShort}/>
+      else
+        <FontAwesomeIcon icon={faArrowDownShortWide}/>
+      }
+      {if sort.key.startsWith 'tag.'
+        <TagList tag={key: sort.key[4..]} noLink/>
+      else if sort.key == 'emoji'
+        <span className="fas fa-thumbs-up positive"/>
+      else
+        capitalize sort.key
+      }
+    </a>
+    <a href={removed} className="sortRemove">
+      <FontAwesomeIcon icon={faCircleXmark}/>
+    </a>
+  </span>
+GroupSort.displayName = 'GroupSort'
 
 columnCenter =
   posts: true
@@ -288,19 +436,25 @@ columnReverse =
   emoji: true
   subscribe: true
 
-export MessageList = React.memo ({topMessages, sortBy}) ->
-  sortLink = (key) ->
-    if key == sortBy.key
-      linkToSort
-        key: key
-        reverse: not sortBy.reverse
+formatColumn = (column) ->
+  switch column
+    when 'subscribe'
+      'Sub'
+    when 'emoji'
+      <span className="fas fa-thumbs-up positive"/>
     else
-      linkToSort
-        key: key
-        reverse: key of columnReverse
+      capitalize column
 
-  <table className="table table-striped">
+export MessageList = React.memo ({group, topMessages, tags, sortBy, clusterBy}) ->
+  <table className="table table-striped group">
     <thead>
+      <tr>
+        <th colSpan="7" className="sorts">
+          <ErrorBoundary>
+            <GroupSorts sortBy={sortBy} clusterBy={clusterBy} tags={tags}/>
+          </ErrorBoundary>
+        </th>
+      </tr>
       <tr>
         {for column, title of (
           title: 'Title of first (root) message in thread'
@@ -315,26 +469,14 @@ export MessageList = React.memo ({topMessages, sortBy}) ->
           <th key={column}
            className={if column of columnCenter then 'text-center'}>
             <TextTooltip title={title}>
-              <a href={sortLink column}>
-                {switch column
-                  when 'subscribe'
-                    'Sub'
-                  when 'emoji'
-                    <span className="fas fa-thumbs-up positive"/>
+              <a href={changeSortLink sortBy, column}>
+                {formatColumn column}
+                {###if primarySort?.key == column
+                  if primarySort.reverse
+                    <FontAwesomeIcon icon={faArrowDownWideShort}/>
                   else
-                    capitalize column
-                }
-                {if sortBy.key == column
-                  if sortBy.key in ['title', 'creator']
-                    type = 'alpha'
-                  else
-                    type = 'numeric'
-                  if sortBy.reverse
-                    order = 'up'
-                  else
-                    order = 'down'
-                  <span className="fas fa-sort-#{type}-#{order}"/>
-                }
+                    <FontAwesomeIcon icon={faArrowDownShortWide}/>
+                ###}
               </a>
             </TextTooltip>
           </th>
@@ -343,10 +485,28 @@ export MessageList = React.memo ({topMessages, sortBy}) ->
     </thead>
     <tbody>
       {for message in topMessages
+        if clusterBy
+          clusters = thisClusters = sortTags message.tags, clusterBy
+          clusters = null if _.isEqual clusters, lastClusters
+          lastClusters = thisClusters
         #if canSee message
         #<a className="list-group-item" href={messageLink}>
         <ErrorBoundary key={message._id}>
-          <MessageShort message={message}/>
+          {if clusters
+            <>
+              <tr className="cluster">
+                {if _.isEmpty clusters
+                  <td colSpan="7" className="empty"/>
+                else
+                  <td colSpan="7">
+                    <TagList tags={clusters} group={group} variant="info"/>
+                  </td>
+                }
+              </tr>
+              <tr/>
+            </>
+          }
+          <MessageShort message={message} clusterBy={clusterBy}/>
         </ErrorBoundary>
       }
     </tbody>
@@ -393,10 +553,7 @@ export ImportExportButtons = React.memo ({group, can}) ->
   </div>
 ImportExportButtons.displayName = 'ImportExportButtons'
 
-export GroupTags = React.memo ({group}) ->
-  tags = useTracker ->
-    groupTags group
-  , [group]
+export GroupTags = React.memo ({tags, group}) ->
   <div className="groupTags">
     <TagList tags={tags} group={group}/>
   </div>
@@ -449,7 +606,7 @@ export GroupMembers = React.memo ({group}) ->
   </div>
 GroupMembers.displayName = 'GroupMembers'
 
-export MessageShort = React.memo ({message}) ->
+export MessageShort = React.memo ({message, clusterBy}) ->
   messageLink = useMemo ->
     pathFor 'message',
       group: message.group
@@ -471,6 +628,11 @@ export MessageShort = React.memo ({message}) ->
   subscribed = useTracker ->
     subscribedToMessage message
   , [message]
+  tags = useMemo ->
+    t = message.tags
+    if t? and clusterBy
+      t = _.omit t, clusterBy
+    sortTags t
 
   onSubscribe = (e) ->
     e.preventDefault()
@@ -487,8 +649,10 @@ export MessageShort = React.memo ({message}) ->
   <tr className="messageShort #{messageClass.call message}">
     <td className="title">
       <a href={messageLink}>
+        <MessageIcons message={message}/>
         <span dangerouslySetInnerHTML={__html: formattedTitle}/>
-        <MessageTags message={message} noLink/>
+        {###<MessageTags message={message} noLink/>###}
+        <TagList tags={tags} group={message.group} noLink/>
         <MessageLabels message={message}/>
       </a>
     </td>

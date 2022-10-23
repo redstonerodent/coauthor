@@ -1,3 +1,5 @@
+import {listToTags} from '/lib/tags'
+
 parseXML = (xml) ->
   ## Must be from some LaTeX copy/paste...:
   xml = xml.replace /\x0C/g, 'fi' # eslint-disable-line no-control-regex
@@ -151,7 +153,7 @@ importOSQA = (group, zip) ->
         ## keep any record of files, so that's the best we can do.
         file.creator = revision.updators[0]
         file.created = revision.updated
-        file.group = group
+        file.metadata = {group}
         do (filename) ->
           new Promise (resolve, reject) ->
             file.callback = (file2) ->
@@ -463,7 +465,7 @@ importLaTeX = (group, zip) ->
                    lastModified: now
           file.creator = me
           file.created = now
-          file.group = group
+          file.metadata = {group}
           file.graphic = graphic
           figure.files.push file
           file.file2id = await new Promise (resolve, reject) ->
@@ -560,14 +562,12 @@ export importFiles = (format, group, files) ->
   unless importer?
     console.warn "Unrecognized import format '#{format}'"
     return
-  sub = Meteor.subscribe 'messages.imported', group, ->
-  done = 0
+  sub = Meteor.subscribe 'messages.imported', group
   for file in files
-    reader = new FileReader
-    reader.onload = (e) ->
-      importer group, e.target.result
-      done += 1
-      if done == files.length
-        sub.stop()
-        console.log 'Import complete'
-    reader["readAs#{importer.readAs}"] file
+    data = await new Promise (resolve) ->
+      reader = new FileReader
+      reader.onload = (e) -> resolve e.target.result
+      reader["readAs#{importer.readAs}"] file
+    await importer group, data
+  sub.stop()
+  console.log 'Import complete'

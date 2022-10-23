@@ -2,6 +2,7 @@ import {check, Match} from 'meteor/check'
 import {Mongo} from 'meteor/mongo'
 
 import {escapeKey, unescapeKey, validKey} from './escape'
+import {subscribedToMessage} from './notifications'
 import {profilingStartup} from './profiling'
 
 @wildGroup = '*'
@@ -16,9 +17,7 @@ export allRoles = ['read', 'post','edit-own', 'history', 'edit', 'super', 'admin
 
 export sortKeys = ['title', 'creator', 'published', 'updated', 'posts', 'emoji', 'subscribe']
 
-export defaultSort =
-  key: 'published'
-  reverse: true
+export defaultSort = '-published'
 
 titleDigits = 10
 @titleSort = (title) ->
@@ -28,7 +27,7 @@ titleDigits = 10
 @Groups = new Mongo.Collection 'groups'
 
 if Meteor.isServer
-  Groups._ensureIndex [['name', 1]]
+  Groups.createIndex [['name', 1]]
 
 @findGroup = (group) ->
   return group unless group?
@@ -37,7 +36,49 @@ if Meteor.isServer
     name: group
 
 export groupDefaultSort = (group) ->
-  findGroup(group)?.defaultSort ? defaultSort
+  try
+    parseSort findGroup(group)?.defaultSort ? defaultSort
+  catch
+    console.warn "Invalid default group sort: #{JSON.stringify findGroup(group)?.defaultSort}"
+    parseSort defaultSort
+
+sortRegex = new RegExp "^([+\\- ])(#{sortKeys.join '|'}|tag.(?:[^+\\- \\\\]|\\\\.)+)"
+export parseSort = (sort) ->
+  return [] unless sort
+  sorts =
+    while (match = sort.match sortRegex)?
+      sort = sort[match[0].length..]  # advance to next portion to parse
+      key: match[2].replace /\\(.)/g, '$1'
+      reverse: match[1] == '-'  # + turns into space which gets treated as +
+      #reverse = match[1] == '-'
+      #key = match[2]
+      #if key.startsWith 'tag.'
+      #  key: 'tag'
+      #  tag: key[4..]
+      #  reverse: reverse
+      #else
+      #  {key, reverse}
+  throw new Error "Invalid sort: #{sort}" if sort
+  sorts
+
+export validSort = (sort) ->
+  return false unless typeof sort == 'string'
+  try
+    parseSort sort
+    true
+  catch
+    false
+
+export unparseSort = (parsed) ->
+  (for sort in parsed
+    (if sort.reverse then '-' else '+') +
+    #if sort.key == 'tag'
+    #  "tag.#{sort.tag}"
+    #else
+      sort.key
+      .replace /\\/g, '\\\\'
+      .replace /[+-]/g, '\\$&'
+  ).join ''
 
 @groupAnonymousRoles = (group) ->
   findGroup(group)?.anonymous ? []
@@ -58,6 +99,13 @@ export groupDefaultSort = (group) ->
   groupRoleCheck(group, role, user) or
   (message and
    (role in (user?.rolesPartial?[escapeGroup(group?.name ? group)]?[message2root message] ? [])))
+
+# Like messageRoleCheck, but where second argument is guaranteed to be root
+# (string ID or null).
+@rootRoleCheck = (group, root, role, user = Meteor.user()) ->
+  groupRoleCheck(group, role, user) or
+  (root and
+   (role in (user?.rolesPartial?[escapeGroup(group?.name ? group)]?[root] ? [])))
 
 @groupPartialMessagesWithRole = (group, role, user = Meteor.user()) ->
   group = group.name if group.name?
@@ -278,9 +326,7 @@ Meteor.methods
 
   groupDefaultSort: (group, sortBy) ->
     check group, String
-    check sortBy,
-      key: Match.Where (key) -> key in sortKeys
-      reverse: Boolean
+    check sortBy, Match.Where validSort
     unless groupRoleCheck group, 'super'
       throw new Meteor.Error 'groupDefaultSort.unauthorized',
         "You need 'super' permissions to set default sort in group '#{group}'"
@@ -366,31 +412,36 @@ Meteor.methods
         $unset: "roles.#{escapeGroup groupOld}": ''
         $set: "roles.#{escapeGroup groupNew}": roles
 
-@groupSortedBy = (group, sort, options, user = Meteor.user()) ->
+mongosort = (key) ->
+  switch key
+    when 'posts'
+      'submessageCount'
+    when 'updated'
+      'submessageLastUpdate'
+    else
+      if key.startsWith 'tag.'
+        'tags'
+      else
+        key
+@groupSortedBy = (group, sorts, options, user = Meteor.user()) ->
   query = accessibleMessagesQuery group, user
   return [] unless query?
   query.root = null
   options = {} unless options?
-  if sort?
-    mongosort =
-      switch sort.key
-        when 'posts'
-          'submessageCount'
-        when 'updated'
-          'submessageLastUpdate'
-        else
-          sort.key
-    #options.sort = [[mongosort, if sort.reverse then 'desc' else 'asc']]
+  for sort in sorts
+    #options.sort = [[mongosort(sort.key), if sort.reverse then 'desc' else 'asc']]
     if options.fields
-      options.fields[mongosort] = true
+      options.fields[mongosort sort.key] = true
       if sort.key == 'subscribe'  ## fields needed for subscribedToMessage
         options.fields.group = true
         options.fields.root = true
       options.fields.deleted = true
       options.fields.minimized = true
+      options.fields.pinned = true
       options.fields.published = true
   msgs = Messages.find query, options
-  if sort?
+  .fetch()
+  for sort in sorts[..].reverse()
     switch sort.key
       when 'title'
         key = (msg) -> titleSort msg.title
@@ -405,18 +456,30 @@ Meteor.methods
             for emoji, users of msg.emoji
               sum += users.length
           sum
+      when 'published', 'updated', 'posts'
+        key = mongosort sort.key
       else
-        key = mongosort
-        #key = (msg) -> msg[mongosort]
-    if key?
-      msgs = msgs.fetch()
-      msgs = _.sortBy msgs, key
-      msgs.reverse() if sort.reverse
-      msgs = _.sortBy msgs,
-        (msg) ->
-          weight = 0
-          weight += 4 if msg.deleted  ## deleted messages go very bottom
-          weight += 2 if msg.minimized  ## minimized messages go bottom
-          weight -= 1 unless msg.published  ## unpublished messages go top
-          weight
+        if sort.key.startsWith 'tag.'
+          tag = sort.key[4..]
+          key = (msg) ->
+            value = msg.tags?[tag]
+            switch value
+              when undefined
+                '\uffff'  # sort to end
+              when true
+                ''
+              else
+                titleSort value
+        else
+          throw new Error "Invalid sort key: '#{sort.key}'"
+    msgs = _.sortBy msgs, key
+    msgs.reverse() if sort.reverse
+  msgs = _.sortBy msgs,
+    (msg) ->
+      weight = 0
+      weight += 8 if msg.deleted  ## deleted messages go very bottom
+      weight += 4 if msg.minimized  ## minimized messages go bottom
+      weight -= 1 if msg.pinned  ## pinned messages go top
+      weight -= 2 unless msg.published  ## unpublished messages go very top
+      weight
   msgs

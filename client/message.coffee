@@ -4,6 +4,7 @@ import Dropdown from 'react-bootstrap/Dropdown'
 import OverlayTrigger from 'react-bootstrap/OverlayTrigger'
 import Tooltip from 'react-bootstrap/Tooltip'
 import {useTracker} from 'meteor/react-meteor-data'
+import {useInView} from 'react-intersection-observer'
 import Blaze from 'meteor/gadicc:blaze-react-component'
 import {useMediaQuery} from 'react-responsive'
 import useEventListener from '@use-it/event-listener'
@@ -11,8 +12,10 @@ import useEventListener from '@use-it/event-listener'
 import {Credits} from './layout.coffee'
 import {ErrorBoundary} from './ErrorBoundary'
 import {FormatDate, formatDate} from './lib/date'
+import {ignoreKey} from './keyboard'
 import {MessageImage, imageTransform, messageRotate} from './MessageImage'
 import {MessagePDF} from './MessagePDF'
+import {TagEdit} from './TagEdit'
 import {TagList} from './TagList'
 import {TextTooltip} from './lib/tooltip'
 import {UserInput} from './UserInput'
@@ -22,11 +25,13 @@ import {defaultHeight, emailless, messagePreviewDefault} from './settings.coffee
 import {forceImgReload} from './lib/forceImgReload'
 import {useElementWidth} from './lib/resize'
 import {setMigrateSafe, migrateWant} from './lib/migrate'
+import {prefersReducedMotion, scrollBehavior} from './lib/scroll'
 import {allEmoji} from '/lib/emoji'
 import {availableFormats, formatBody, formatFile, formatFileDescription, formatTitleOrFilename, parseCoauthorAuthorUrl, parseCoauthorMessageUrl} from '/lib/formats'
-import {ancestorMessages, messageDiffsExpanded, messageNeighbors, sortedMessageReaders} from '/lib/messages'
-import {autosubscribe, defaultNotificationsOn} from '/lib/notifications'
+import {ancestorMessages, descendantMessagesQuery, messageDiffsExpanded, messageNeighbors, sortedMessageReaders} from '/lib/messages'
+import {autosubscribe, defaultNotificationsOn, messageSubscribers} from '/lib/notifications'
 import {autopublish, defaultKeyboard, userKeyboard, themeEditor} from '/lib/settings'
+import {escapeTag, sortTags} from '/lib/tags'
 
 sharejsEditor = 'cm'  ## 'ace' or 'cm'; also change template used in message.jade
 
@@ -66,24 +71,6 @@ switch sharejsEditor
 @routeMessage = ->
   Router.current()?.params?.message
 
-@linkToTag = (tag, group) ->
-  #pathFor 'tag',
-  #  group: group
-  #  tag: tag.key
-  search = tag.key
-  if 0 <= search.indexOf ' '
-    if 0 <= search.indexOf '"'
-      if 0 <= search.indexOf "'"
-        search = "\"#{search.replace /"/g, '"\'"\'"'}\""
-        .replace /^""|""$/g, ''
-      else
-        search = "'#{search}'"
-    else
-      search = "\"#{search}\""
-  pathFor 'search',
-    group: group
-    search: "tag:#{search}"
-
 export SubmessageHeader = React.memo ({message}) ->
   <>
     <MaybeRootHeader message={message}/>
@@ -115,7 +102,8 @@ export RootHeader = React.memo ({message}) ->
     formatTitleOrFilename root,
       orUntitled: false
       bold: true
-  , [root]
+      id: message._id
+  , [root, message._id]
 
   return null unless root?
   <div className="panel panel-default root" data-message={root._id}>
@@ -226,13 +214,12 @@ Message = React.memo ({message}) ->
   , [isScreenSm]
   onToc = (e) ->
     e.preventDefault()
+    e.stopPropagation()
     setToc not toc
-  useEventListener 'keypress', (e) ->
-    return if e.target.tagName in ['INPUT', 'TEXTAREA']
-    if e.key.toLowerCase() == 't' and not (e.ctrlKey or e.altKey or e.metaKey)
-      e.preventDefault()
-      e.stopPropagation()
-      setToc not toc
+  useEventListener 'keydown', (e) ->
+    return if ignoreKey e
+    if e.key.toLowerCase() == 't'
+      onToc e
 
   ## Set sticky column height to remaining height of screen:
   ## 100vh when stuck, and less when header is (partly) visible.
@@ -283,6 +270,8 @@ Message = React.memo ({message}) ->
   </>
 Message.displayName = 'Message'
 
+pinnedIndex = new ReactiveDict  # maps pinned message IDs to indices 1, 2, ...
+
 MessageInfoBoxes = React.memo ({message}) ->
   orphans = useTracker ->
     messageOrphans message._id
@@ -326,6 +315,28 @@ MessageInfoBoxes = React.memo ({message}) ->
       </React.Fragment>
     )
   , [message._id, message.group]
+  pinnedMessages = useTracker ->
+    pinnedIndex.clear()
+    index = 1
+    Messages.find $and: [
+      descendantMessagesQuery message2root message
+    ,
+      group: message.group
+      pinned: true
+    ],
+      sort: updated: 1
+      fields:
+        format: true
+        title: true
+        file: true
+        updated: true
+    .map (pinnedMessage) ->
+      pinnedIndex.set pinnedMessage._id, index
+      index: index++
+      _id: pinnedMessage._id
+      updated: formatDate pinnedMessage.updated
+      formattedTitle: formatTitleOrFilename pinnedMessage, bold: true
+  , [message._id, message.group, message.root]
 
   <>
     <div className="authors alert alert-info">
@@ -373,6 +384,29 @@ MessageInfoBoxes = React.memo ({message}) ->
         </p>
       </div>
     }
+    {if pinnedMessages.length
+      <div className="pinned alert alert-special">
+        <p><b>Pinned messages in this thread:</b></p>
+        <ul className="pinned">
+          {for pinnedMessage in pinnedMessages
+            <li key={pinnedMessage._id}>
+              <a href={pathFor 'message',
+                group: message.group
+                message: pinnedMessage._id
+              }>
+                <span className="fas fa-thumbtack"/>
+                {pinnedMessage.index}
+                {' '}
+                <span className="title"
+                 dangerouslySetInnerHTML={__html: pinnedMessage.formattedTitle}/>
+                {' '}
+                (last updated {pinnedMessage.updated})
+              </a>
+            </li>
+          }
+        </ul>
+      </div>
+    }
   </>
 MessageInfoBoxes.displayName = 'MessageInfoBoxes'
 
@@ -390,6 +424,8 @@ export messageClass = ->
     'private'
   else if @minimized
     'minimized'
+  else if @pinned
+    'pinned'
   else
     'published'
 
@@ -440,7 +476,8 @@ updateFileQuery = _.debounce ->
       #console.log "#{id} changed:", fields
       return unless fileQueries[id]?
       if fields.file? and fileQueries[id].file != fields.file
-        forceImgReload urlToFile id
+        ## setTimeout to wait for React to finish rendering
+        setTimeout (-> forceImgReload urlToFile id), 1000
         fileQueries[id].file = fields.file
 , 100
 
@@ -469,7 +506,8 @@ export scrollToMessage = (id) ->
     scrollToLater = null
     $('html, body').animate
       scrollTop: Math.max 0, $(dom).offset().top - 15
-    , 200, 'swing', ->
+    , (if prefersReducedMotion() then 0 else 200)
+    , 'swing', ->
       ## Focus on title edit box when scrolling to message being edited.
       ## We'd like to use `$(dom).find('input.title')`
       ## but want to exclude children.
@@ -500,6 +538,38 @@ ReadMessage.displayName = 'ReadMessage'
 Template.submessage.helpers
   Submessage: -> Submessage
   message: -> @
+
+export MessageIcons = React.memo ({message, editors}) ->
+  editors = useTracker ->
+    (displayUser editor for editor in message.editing ? []).join ', '
+  , [message.editing?.join ',']
+  pinIndex = useTracker ->
+    pinnedIndex.get message._id
+  , [message._id]
+
+  <>
+    {if editors
+      <>
+        <TextTooltip title={"Being edited by #{editors}"}>
+          <span className="fas fa-edit"/>
+        </TextTooltip>
+        {' '}
+      </>
+    }
+    {if message.pinned
+      <>
+        <span className="fas fa-thumbtack"/>
+        {pinIndex}
+        {' '}
+      </>
+    }
+    {if message.file
+      <>
+        <span className="fas fa-paperclip"/>
+        {' '}
+      </>
+    }
+  </>
 
 export MessageTags = React.memo ({message, noLink}) ->
   <span className="messageTags">
@@ -1044,6 +1114,7 @@ panelClass =
   unpublished: 'panel-warning'
   private: 'panel-info'
   minimized: 'panel-success'
+  pinned: 'panel-special'
   published: 'panel-primary'
 messagePanelClass = (message, editing) ->
   classes = []
@@ -1366,9 +1437,8 @@ export uploaderProps = (callback, inputRef) ->
       e.stopPropagation()
       callback e.dataTransfer.files, e
   inputProps:
-    onChange: (e) ->
+    onInput: (e) ->
       callback e.target.files, e
-      e.target.value = ''
 
 export ReplyButtons = React.memo ({message, prefix}) ->
   attachInput = useRef()
@@ -1452,7 +1522,9 @@ export ReplyButtons = React.memo ({message, prefix}) ->
           while callbacks[called]?
             callbacks[called]()
             called += 1
-      file.group = message.group
+      file.metadata =
+        group: message.group
+        root: message2root message
       Files.resumable.addFile file, e
   {buttonProps, dropProps, inputProps} = uploaderProps attachFiles, attachInput
 
@@ -1556,12 +1628,12 @@ export ReplyButtons = React.memo ({message, prefix}) ->
   </Dropdown>
 ReplyButtons.displayName = 'ReplyButtons'
 
-export MessageReplace = React.memo ({_id, group, tabindex}) ->
+export MessageReplace = React.memo ({message, tabindex}) ->
   replaceInput = useRef()
 
   replaceFiles = (files, e, t) ->
     if files.length != 1
-      console.error "Attempt to replace #{_id} with #{files.length} files -- expected 1"
+      console.error "Attempt to replace #{message._id} with #{files.length} files -- expected 1"
     else
       file = files[0]
       file.callback = (file2, done) ->
@@ -1569,11 +1641,13 @@ export MessageReplace = React.memo ({_id, group, tabindex}) ->
           file: file2.uniqueIdentifier
           finished: true
         ## Reset rotation angle on replace
-        data = findMessage _id
+        data = findMessage message._id
         if data.rotate
           diff.rotate = 0
-        Meteor.call 'messageUpdate', _id, diff, done
-      file.group = group
+        Meteor.call 'messageUpdate', message._id, diff, done
+      file.metadata =
+        group: message.group
+        root: message2root message
       Files.resumable.addFile file, e
   {buttonProps, dropProps, inputProps} = uploaderProps replaceFiles, replaceInput
 
@@ -1599,6 +1673,34 @@ export TableOfContents = React.memo ({message, parent, index}) ->
   </ErrorBoundary>
 TableOfContents.displayName = 'TableOfContents'
 
+tocItemTop = (item) ->
+  itemTop = 0
+  ancestor = item.parentNode
+  while ancestor? and not /sticky/.test ancestor.className
+    itemTop += ancestor.offsetTop
+    ancestor = ancestor.offsetParent
+  itemTop
+
+tocHoverIndicator = _.debounce ->
+  toc = document.querySelector 'nav.contents'
+  return unless toc?  # not in a view with table of contents
+  toc.previousSibling?.classList.remove 'active'
+  toc.nextSibling?.classList.remove 'active'
+  item = toc.querySelector '.hover'
+  return unless item?  # no hovered item
+  top = tocItemTop item
+  if top < toc.scrollTop
+    toc.previousSibling?.classList.add 'active'
+  else if top > toc.scrollTop + toc.clientHeight
+    toc.nextSibling?.classList.add 'active'
+, 100
+
+tocHoverItem = (e) ->
+  id = e.target.dataset.id
+  return unless id?
+  document.querySelector "[data-message='#{id}'].message"
+  ?.classList.toggle 'hover', e.type == 'mouseenter'
+
 export WrappedTableOfContents = React.memo ({message, parent, index}) ->
   isRoot = not parent?  # should not differ between calls (for hook properties)
   formattedTitle = useTracker ->
@@ -1610,18 +1712,28 @@ export WrappedTableOfContents = React.memo ({message, parent, index}) ->
     Meteor.user()
   , []
   editing = editingMessage message, user
-  editors = useTracker ->
-    (displayUser editor for editor in message.editing ? []).join ', '
-  , [message.editing?.join ',']
   folded = useTracker ->
     (messageFolded.get message._id) and
     not (routeHere message._id) and           # never fold if top-level message
     not editing                               # never fold if editing
   , [message._id, editing]
-  creator = useTracker ->
-    displayUser message.creator
-  , [message.creator]
+  #creator = useTracker ->
+  #  displayUser message.creator
+  #, [message.creator]
+  author = useTracker ->
+    if message.coauthors.length == 1
+      displayUser message.coauthors[0]
+    else if message.coauthors.length > 1
+      (for author in message.coauthors
+        displayUserLastName author
+      ).join ', '
+    else
+      displayUser message.creator
+  , [message.coauthors.join(' '), message.creator]
   children = useChildren message, true
+  inView = useTracker ->
+    messageInView.get message._id
+  , [message._id]
   inner =
     <>
       {unless isRoot
@@ -1632,28 +1744,16 @@ export WrappedTableOfContents = React.memo ({message, parent, index}) ->
       }
       <a href={pathFor 'message', {group: message.group, message: message._id}}
        data-id={message._id}
-       className="onMessageDrop #{if isRoot then 'title' else ''} #{messageClass.call message}"
+       className="onMessageDrop #{if isRoot then 'title' else ''} #{messageClass.call message} #{inView}"
        onDragStart={messageOnDragStart message}
        onDragEnter={addDragOver} onDragLeave={removeDragOver}
-       onDragOver={dragOver} onDrop={dropOn}>
-        {if editors
-          <>
-            <TextTooltip title={"Being edited by #{editors}"}>
-              <span className="fas fa-edit"/>
-            </TextTooltip>
-            {' '}
-          </>
-        }
-        {if message.file
-          <>
-            <span className="fas fa-paperclip"/>
-            {' '}
-          </>
-        }
+       onDragOver={dragOver} onDrop={dropOn}
+       onMouseEnter={tocHoverItem} onMouseLeave={tocHoverItem}>
+        <MessageIcons message={message}/>
         <span dangerouslySetInnerHTML={__html: formattedTitle}/>
         {' '}
-        <span className="creator">
-          [{creator}]
+        <span className="author">
+          [{author}]
         </span>
       </a>
     </>
@@ -1680,23 +1780,18 @@ export WrappedTableOfContents = React.memo ({message, parent, index}) ->
         </ul>
 
   if isRoot
-    ref = useRef()
-    useEffect ->
-      return unless ref.current?
-      $('body').scrollspy
-        target: 'nav.contents'
-        offset: 100
-      undefined
-    , []
-
-    <nav className="contents" ref={ref}>
-      <ul className="nav contents">
-        <li className="btn-group-xs #{if folded then 'folded' else ''}">
-          {inner}
-        </li>
-      </ul>
-      {children}
-    </nav>
+    <>
+      <div className="top indicator"/>
+      <nav className="contents" onScroll={tocHoverIndicator}>
+        <ul className="nav contents">
+          <li className="btn-group-xs #{if folded then 'folded' else ''}">
+            {inner}
+          </li>
+        </ul>
+        {children}
+      </nav>
+      <div className="bottom indicator"/>
+    </>
   else
     <li className="btn-group-xs #{if folded then 'folded' else ''}">
       {inner}
@@ -1884,6 +1979,21 @@ export Submessage = React.memo ({message, read}) ->
   </ErrorBoundary>
 Submessage.displayName = 'Submessage'
 
+messageInView = new ReactiveDict
+
+## Maintain whether selection changed nontrivially recently, which causes
+## the following click to be ignored by showTOC.
+skipClick = false
+document.addEventListener 'selectionchange', ->
+  selection = document.getSelection()
+  for i in [0...selection.rangeCount]
+    range = selection.getRangeAt i
+    unless range.startContainer == range.endContainer and
+           range.startOffset == range.endOffset
+      skipClick = true
+      return
+window.addEventListener 'click', -> skipClick = false
+
 submessageCount = 0
 export WrappedSubmessage = React.memo ({message, read}) ->
   here = useTracker ->
@@ -1904,6 +2014,8 @@ export WrappedSubmessage = React.memo ({message, read}) ->
     unpublish: canUnpublish message._id
     minimize: canMinimize message._id
     unminimize: canUnminimize message._id
+    pin: canPin message._id
+    unpin: canUnpin message._id
     protect: canProtect message._id
     superdelete: canSuperdelete message._id
     private: canPrivate message._id
@@ -1915,8 +2027,26 @@ export WrappedSubmessage = React.memo ({message, read}) ->
     becomeSuper: canSuper message.group, false
   , [message._id]
   ref = useRef()
+  [inViewRef, inView, intersection] = useInView
+    threshold: [0, 1]
+  fullIntersection = intersection?.intersectionRatio == 1
+  setRef = useCallback (node) ->
+    ref.current = node
+    inViewRef node
+  , [inViewRef]
   messageBodyRef = useRef()
-  addTagRef = useRef()
+
+  useLayoutEffect ->
+    messageInView.set message._id,
+      if inView
+        if fullIntersection
+          'active'
+        else
+          'active partial'
+      else
+        ''
+    undefined
+  , [inView, fullIntersection]
 
   if read  # should not change
     editing = raw = folded = false
@@ -2126,9 +2256,6 @@ export WrappedSubmessage = React.memo ({message, read}) ->
       .fetch()
     , [message.group, _.keys(message.tags ? {}).join '\n']
 
-  editors = useTracker ->
-    (displayUser editor for editor in message.editing ? []).join ', '
-  , [message.editing?.join ',']
   historified = history ? message
   messageFileType = useTracker ->
     if historified.file
@@ -2150,8 +2277,8 @@ export WrappedSubmessage = React.memo ({message, read}) ->
     if raw
       "<PRE CLASS='raw'>#{_.escape historified.body}</PRE>"
     else
-      formatBody historified.format, historified.body
-  , [historified.body, historified.format, raw]
+      formatBody historified.format, historified.body, id: historified._id
+  , [historified.body, historified.format, historified._id, raw]
   formattedFile = useTracker ->
     file = findFile historified.file
     return {} unless file?
@@ -2251,42 +2378,94 @@ export WrappedSubmessage = React.memo ({message, read}) ->
     , idle
   onTagRemove = (e) ->
     e.preventDefault()
-    tag = e.currentTarget.getAttribute 'data-tag'
-    if tag of message.tags
+    tag = e.currentTarget.closest('.tagEdit')?.dataset.tag
+    escaped = escapeTag tag
+    if escaped of message.tags
       Meteor.call 'messageUpdate', message._id,
-        tags: _.omit message.tags, escapeTag tag
+        tags: _.omit message.tags, escaped
       , (error) ->
         if error
           console.error error
         else
           Meteor.call 'tagDelete', message.group, tag, true
     else
-      console.warn "Attempt to delete nonexistant tag '#{tag}' from message #{message._id}"
-  onTagAdd = (e) ->
+      console.warn "Attempt to delete nonexistent tag '#{tag}' from message #{message._id}"
+  onTagSelect = (e) ->
     e.preventDefault()
-    tag = e.target.getAttribute 'data-tag'
+    tag = e.target.dataset.tag
     if tag of message.tags
       console.warn "Attempt to add duplicate tag '#{tag}' to message #{message._id}"
     else
       Meteor.call 'messageUpdate', message._id,
         tags: Object.assign {}, message.tags ? {}, {"#{escapeTag tag}": true}
-  onTagNew = (e) ->
+  onTagEdit = (e, tag, tagVal, oldTag) ->
     e.preventDefault()
-    textTag = $(e.target).parents('form').first().find('.tagAddText')[0]
-    tag = textTag.value.trim()
-    textTag.value = ''  ## reset custom tag
     if tag
-      if tag of message.tags
-        console.warn "Attempt to add duplicate tag '#{tag}' to message #{message._id}"
-      else
-        Meteor.call 'tagNew', message.group, tag, 'boolean'
+      escaped = escapeTag tag
+      exists = escaped of message.tags
+      unless exists
+        Meteor.call 'tagNew', message.group, tag
+      tagVal or= true  # use special 'true' value instead of empty string
+      if not oldTag? and tagVal == true and
+         message.tags?[escaped] not in [undefined, true]
+        console.warn "Not blanking tag '#{tag}' on message #{message._id} which already has value '#{message.tags[escaped]}'"
+      else if tagVal != message.tags?[escaped]
+        newTags = {...message.tags, "#{escapeTag tag}": tagVal}
+        if (rename = oldTag? and oldTag.key != tag)
+          delete newTags[escapeTag oldTag.key]
         Meteor.call 'messageUpdate', message._id,
-          tags: Object.assign {}, message.tags ? {}, {"#{escapeTag tag}": true}
-    addTagRef.current.click()
+          tags: newTags
+        , (error) ->
+          if error
+            console.error error
+          else if rename
+            Meteor.call 'tagDelete', message.group, oldTag.key, true
+      #else
+      #  console.warn "No-op update tag '#{tag}' = '#{tagVal}' in message #{message._id}"
     false  ## prevent form from submitting
+  ## Scroll the table of contents (if visible) to align with this message (if
+  ## possible), and pulse the table of contents item (for when not possible).
+  showTOC = (e) ->
+    ## Find corresponding table of contents entry
+    toc = document.querySelector 'nav.contents'
+    return unless toc?  # not in a view with table of contents
+    item = toc.querySelector "a[data-id='#{message._id}']"
+    return unless item?  # this message is hidden in table of contents
+    msgTop = e.currentTarget.getBoundingClientRect().top
+    itemTop = tocItemTop item
+    switch e.type
+      when 'mouseenter'
+        item.classList.add 'hover'
+        tocHoverIndicator()
+      when 'mouseleave'
+        item.classList.remove 'hover'
+        tocHoverIndicator()
+      when 'click'
+        return if skipClick  # ignore selecting clicks
+        ## Ignore propagated click events e.g. from Action dropdown button
+        ## or from Replace File hidden <input>.
+        return unless /panel-heading|panel-title/.test e.target.className
+        e.preventDefault()
+        ## Scroll to align TOC item with message header
+        toc.scroll
+          top: itemTop - msgTop - 9  # fudge factor
+          behavior: scrollBehavior()
+        ## Pulse TOC item
+        item.animate [
+          transform: 'scale(1)'
+        ,
+          transform:
+            if prefersReducedMotion() then 'scale(1)' else 'scale(0.95)'
+          backgroundColor: '#888'
+        ,
+          transform: 'scale(1)'
+        ],
+          duration: 500
+          iterations: 3
 
-  <div className="panel message #{messagePanelClass message, editing}" data-message={message._id} id={message._id} ref={ref}>
-    <div className="panel-heading clearfix">
+  <div className="panel message #{messagePanelClass message, editing}" data-message={message._id} id={message._id} ref={setRef}>
+    <div className="panel-heading clearfix" onClick={showTOC}
+     onMouseEnter={showTOC} onMouseLeave={showTOC}>
       {if editing and not history?
         <input className="push-down form-control title" type="text" placeholder="Title" value={editTitle} onChange={onChangeTitle} tabIndex={tabindex0+18}/>
       else
@@ -2319,74 +2498,39 @@ export WrappedSubmessage = React.memo ({message, read}) ->
             }
           </span>
           <span className="space"/>
-          {if not history? and editors
-            <>
-              <TextTooltip title={"Being edited by #{editors}"}>
-                <span className="fas fa-edit"/>
-              </TextTooltip>
-              {' '}
-            </>
-          }
-          {if historified.file
-            <>
-              <span className="fas fa-paperclip"/>
-              {' '}
-            </>
-          }
+          <MessageIcons message={historified}/>
           <span className="title panel-title"
-          dangerouslySetInnerHTML={__html: formattedTitle[0]}/>
+           dangerouslySetInnerHTML={__html: formattedTitle[0]}/>
           <MessageTags message={historified}/>
           <MessageLabels message={historified}/>
         </span>
       }
-      {###http://stackoverflow.com/questions/22390272/how-to-create-a-label-with-close-icon-in-bootstrap###}
       {if editing
         <span className="message-subtitle">
           <span className="upper-strut"/>
           <span className="tags">
             {for tag in sortTags message.tags
               <React.Fragment key={tag.key}>
-                <span className="label label-default tag tagWithRemove">
-                  {tag.key + ' '}
+                <TagEdit tag={tag} className="label label-default outer-label"
+                 onTagEdit={onTagEdit} onTagSelect={onTagSelect}
+                 onTagRemove={onTagRemove}>
+                  <TagList tag={tag} noLink/>
+                  {### Old direct removal button
                   <span className="tagRemove fas fa-times-circle" aria-label="Remove" data-tag={tag.key} onClick={onTagRemove}/>
-                </span>
+                  ###}
+                </TagEdit>
                 {' '}
               </React.Fragment>
             }
           </span>
-          <span className="btn-group">
-            <Dropdown>
-              <Dropdown.Toggle variant="default"
-               className="label label-default" ref={addTagRef}>
-                <span className="fas fa-plus"/>
-                {' Tag'}
-              </Dropdown.Toggle>
-              <Dropdown.Menu className="tagMenu">
-                <li className="disabled">
-                  <a>
-                    <form className="input-group input-group-sm">
-                      <input className="tagAddText form-control" type="text" placeholder="New Tag..."/>
-                      <div className="input-group-btn">
-                        <button className="btn btn-default tagAddNew" type="submit" onClick={onTagNew}>
-                          <span className="fas fa-plus"/>
-                        </button>
-                      </div>
-                    </form>
-                  </a>
-                </li>
-                {if absentTags.length
-                  <>
-                    <li className="divider" role="separator"/>
-                    {for tag in absentTags
-                      <li key={tag.key}>
-                        <Dropdown.Item className="tagAdd" href="#" data-tag={tag.key} onClick={onTagAdd}>{tag.key}</Dropdown.Item>
-                      </li>
-                    }
-                  </>
-                }
-              </Dropdown.Menu>
-            </Dropdown>
-          </span>
+          <TagEdit tags={absentTags}
+           className="label label-default outer-label"
+           onTagEdit={onTagEdit} onTagSelect={onTagSelect}>
+            <span className="label label-default">
+              <span className="fas fa-plus" aria-label="Add"/>
+              {' Tag'}
+            </span>
+          </TagEdit>
           <MessageLabels message={message}/>
           <span className="lower-strut"/>
         </span>
@@ -2492,7 +2636,7 @@ export WrappedSubmessage = React.memo ({message, read}) ->
               else unless folded
                 <>
                   {if message.file and can.edit
-                    <MessageReplace _id={message._id} group={message.group} tabindex={tabindex0+7}/>
+                    <MessageReplace message={message} tabindex={tabindex0+7}/>
                   }
                   <OverlayTrigger flip overlay={(props) ->
                     <Tooltip {...props}>
@@ -2567,7 +2711,7 @@ export WrappedSubmessage = React.memo ({message, read}) ->
                     {if messageFileType == 'image'
                       <MessageImage message={message}/>
                     }
-                    <MessageReplace _id={message._id} group={message.group} tabindex={tabindex0+9}/>
+                    <MessageReplace message={message} tabindex={tabindex0+9}/>
                   </div>
                 </div>
               }
@@ -2635,9 +2779,7 @@ export WrappedSubmessage = React.memo ({message, read}) ->
                   <span className="fas fa-caret-up"/>
                 </a>
                 <span className="space"/>
-                {if historified.file
-                  <span className="fas fa-paperclip"/>
-                }
+                <MessageIcons message={historified}/>
                 <span className="panel-title"
                 dangerouslySetInnerHTML={__html: formattedTitle[1]}/>
                 <MessageTags message={message}/>
@@ -2685,6 +2827,11 @@ export MessageActions = React.memo ({message, can, editing, tabindex0}) ->
     Meteor.call 'messageUpdate', message._id,
       minimized: not message.minimized
       finished: true
+  onPin = (e) ->
+    e.preventDefault()
+    Meteor.call 'messageUpdate', message._id,
+      pinned: not message.pinned
+      finished: true
   onProtect = (e) ->
     e.preventDefault()
     Meteor.call 'messageUpdate', message._id,
@@ -2711,13 +2858,32 @@ export MessageActions = React.memo ({message, can, editing, tabindex0}) ->
       coauthors: $addToSet: [myUsername]
       finished: true
 
-  return null unless can.minimize or can.unminimize or can.delete or can.undelete or can.publish or can.unpublish or can.superdelete or can.private or can.protect
+  return null unless can.pin or can.unpin or can.minimize or can.unminimize or can.delete or can.undelete or can.publish or can.unpublish or can.superdelete or can.private or can.protect
   <Dropdown className="btn-group">
     <Dropdown.Toggle variant="info" tabIndex={tabindex0+4}>
       {"Action "}
       <span className="caret"/>
     </Dropdown.Toggle>
     <Dropdown.Menu align="right" className="actionMenu buttonMenu">
+      {if message.pinned
+        if can.unpin
+          <li>
+            <Dropdown.Item className="pinMsgButton" href="#">
+              <TextTooltip placement="left" title="Remove this message's pin, marking it as no longer important for everyone.">
+                <button className="btn btn-danger btn-block" onClick={onPin}>Unpin</button>
+              </TextTooltip>
+            </Dropdown.Item>
+          </li>
+      else
+        if can.pin
+          <li>
+            <Dropdown.Item className="pinMsgButton" href="#">
+              <TextTooltip placement="left" title="Pin this message, marking it as important for everyone. Pinned messages are listed at the bottom of the thread.">
+                <button className="btn btn-success btn-block" onClick={onPin}>Pin</button>
+              </TextTooltip>
+            </Dropdown.Item>
+          </li>
+      }
       {if message.minimized
         if can.unminimize
           <li>
